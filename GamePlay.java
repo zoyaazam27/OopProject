@@ -1,47 +1,45 @@
-
 package com.mycompany.brick;
 
 import javax.swing.JPanel;
 import javax.swing.Timer;
-import java.awt.Graphics2D;
-import java.awt.Rectangle;
-import java.awt.Graphics;
-import java.awt.Color;
-import java.awt.Font;
-import java.awt.Image;
+import java.awt.*;
 import javax.swing.ImageIcon;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+import java.util.Random;
 
 public class GamePlay extends JPanel implements KeyListener, ActionListener {
 
+    private final Image backgroundImage;
     private boolean play = false;
     private int score = 0;
     private int totalBricks = 21;
     private Timer timer;
     private int delay = 8;
 
-    // Player and knife positions
-    private int playerX = 310;
+    private int playerX = 310; // Paddle position
+    private int paddleWidth = 100; // Dynamic paddle width
+
     private int knifePosX = 120;
     private int knifePosY = 350;
     private int knifeXDir = -1;
     private int knifeYDir = -2;
 
-    private MapGenerator map;
+    private int lives = 3; // Player lives
+    private boolean doublePointsActive = false;
 
-    // Knife image
+    private MapGenerator map;
     private ImageIcon knifeIcon;
     private Image knifeImage;
+    private Random random = new Random();
 
-    // Timer variables
-    private int elapsedSeconds = 0;
+    private int elapsedSeconds = 0; // Time tracker
     private Timer gameClock;
 
-    // Rotation angle for the knife
-    private double knifeAngle = 0;
+    private enum GameState {WELCOME, PLAYING, GAME_OVER}
+    private GameState gameState = GameState.WELCOME;
 
     public GamePlay() {
         map = new MapGenerator(3, 7);
@@ -49,15 +47,13 @@ public class GamePlay extends JPanel implements KeyListener, ActionListener {
         setFocusable(true);
         setFocusTraversalKeysEnabled(false);
 
-        // Load knife image and scale it if necessary
         knifeIcon = new ImageIcon(getClass().getResource("/com/mycompany/brick/knifee.jpg"));
-        knifeImage = knifeIcon.getImage().getScaledInstance(80, 20, Image.SCALE_DEFAULT); // Adjust size of the knife image
+        knifeImage = knifeIcon.getImage().getScaledInstance(80, 20, Image.SCALE_DEFAULT);
+        backgroundImage = new ImageIcon(getClass().getResource("/com/mycompany/brick/background.jpg")).getImage();
 
-        // Ball and paddle timer
         timer = new Timer(delay, this);
         timer.start();
 
-        // Game clock timer (1-second interval)
         gameClock = new Timer(1000, e -> {
             if (play) elapsedSeconds++;
         });
@@ -66,200 +62,219 @@ public class GamePlay extends JPanel implements KeyListener, ActionListener {
 
     @Override
     public void paint(Graphics g) {
-        super.paint(g); // Clear previous drawings
+        super.paint(g);
 
         // Background
         g.setColor(Color.black);
         g.fillRect(1, 1, 692, 592);
 
-        // Draw map (bricks)
-        map.draw((Graphics2D) g);
+        if (gameState == GameState.WELCOME) {
+            showWelcomeScreen(g);
+        } else if (gameState == GameState.PLAYING) {
+            // Map and borders
+            map.draw((Graphics2D) g);
+            g.setColor(Color.yellow);
+            g.fillRect(0, 0, 3, 592);
+            g.fillRect(0, 0, 692, 3);
+            g.fillRect(691, 0, 3, 592);
 
-        // Borders
-        g.setColor(Color.yellow);
-        g.fillRect(0, 0, 3, 592);
-        g.fillRect(0, 0, 692, 3);
-        g.fillRect(691, 0, 3, 592);
+            // Score and lives
+            g.setColor(Color.white);
+            g.setFont(new Font("serif", Font.BOLD, 25));
+            g.drawString("Score: " + score, 540, 30);
+            g.drawString("Lives: " + lives, 20, 30);
+            g.drawString("Time: " + formatTime(elapsedSeconds), 280, 30);
 
-        // Score display
+            // Paddle
+            g.setColor(Color.yellow);
+            g.fillRect(playerX, 550, paddleWidth, 8);
+
+            // Knife
+            drawKnife(g);
+
+            // Game Over
+            if (lives <= 0) {
+                gameState = GameState.GAME_OVER;
+                endGame(g, "Game Over! Your Score: " + score);
+            }
+
+            // Victory
+            if (totalBricks == 0) {
+                gameState = GameState.GAME_OVER;
+                endGame(g, "You Won! Your Score: " + score);
+            }
+        } else if (gameState == GameState.GAME_OVER) {
+            // Game Over screen
+            endGame(g, "Game Over! Your Score: " + score);
+        }
+    }
+
+    private void showWelcomeScreen(Graphics g) {
         g.setColor(Color.white);
-        g.setFont(new Font("serif", Font.BOLD, 25));
-        g.drawString("Score: " + score, 590, 30);
+        g.setFont(new Font("serif", Font.BOLD, 40));
+        g.drawString("Welcome to the Slicing Spree!", 140, 250);
 
-        // Timer display
-        g.setFont(new Font("serif", Font.BOLD, 20));
-        g.drawString("Time: " + formatTime(elapsedSeconds), 20, 30);
+        g.setFont(new Font("serif", Font.BOLD, 30));
+        g.drawString("Press Enter to Start", 230, 300);
+    }
 
-        // Paddle
-        g.setColor(Color.yellow);
-        g.fillRect(playerX, 550, 100, 8);
-
-        // Knife (instead of ball) with rotation
+    private void drawKnife(Graphics g) {
         Graphics2D g2d = (Graphics2D) g;
-        g2d.translate(knifePosX + 40, knifePosY + 10);  // Move the knife to its position
-        g2d.rotate(Math.toRadians(knifeAngle));  // Apply rotation
-        g2d.drawImage(knifeImage, -40, -10, this); // Draw knife with rotation
-        g2d.rotate(-Math.toRadians(knifeAngle)); // Reset rotation
-        g2d.translate(-(knifePosX + 40), -(knifePosY + 10)); // Reset the translation
+        g2d.drawImage(knifeImage, knifePosX, knifePosY, this);
 
-        // Game Over condition
-        if (knifePosY > 570) {
-            play = false;
-            stopGameClock(); // Stop the game clock
-            knifeXDir = 0;
-            knifeYDir = 0;
+        // Trail effect
+        g2d.setColor(new Color(255, 255, 255, 80)); // Semi-transparent white
+        g2d.fillOval(knifePosX + 20, knifePosY + 10, 40, 40);
+    }
 
-            g.setColor(Color.red);
-            g.setFont(new Font("serif", Font.BOLD, 30));
-            g.drawString("Game Over! Your Score: " + score, 190, 300);
+    private void endGame(Graphics g, String message) {
+        play = false;
+        stopGameClock();
+        knifeXDir = 0;
+        knifeYDir = 0;
 
-            g.setFont(new Font("serif", Font.BOLD, 25));
-            g.drawString("Time Played: " + formatTime(elapsedSeconds), 230, 340); // Display elapsed time
+        g.setColor(Color.red);
+        g.setFont(new Font("serif", Font.BOLD, 30));
+        g.drawString(message, 190, 300);
 
-            g.setFont(new Font("serif", Font.BOLD, 20));
-            g.drawString("Press Enter to Restart", 230, 380);
-        }
+        g.setFont(new Font("serif", Font.BOLD, 25));
+        g.drawString("Time Played: " + formatTime(elapsedSeconds), 230, 340);
 
-        // Victory condition
-        if (totalBricks == 0) {
-            play = false;
-            stopGameClock(); // Stop the game clock
-            knifeXDir = 0;
-            knifeYDir = 0;
+        g.setFont(new Font("serif", Font.BOLD, 20));
+        g.drawString("Press Enter to Restart", 230, 380);
+    }
 
-            g.setColor(Color.green);
-            g.setFont(new Font("serif", Font.BOLD, 30));
-            g.drawString("You Won! Your Score: " + score, 190, 300);
-
-            g.setFont(new Font("serif", Font.BOLD, 25));
-            g.drawString("Time Played: " + formatTime(elapsedSeconds), 230, 340); // Display elapsed time
-
-            g.setFont(new Font("serif", Font.BOLD, 20));
-            g.drawString("Press Enter to Restart", 230, 380);
-        }
+    private void stopGameClock() {
     }
 
     @Override
     public void actionPerformed(ActionEvent e) {
         timer.start();
         if (play) {
-            // Knife-paddle collision
-            if (new Rectangle(knifePosX, knifePosY, 80, 20).intersects(new Rectangle(playerX, 550, 100, 8))) {
-                knifeYDir = -knifeYDir;
-                knifeAngle += 30;  // Rotate the knife by 30 degrees on each collision
-                if (knifeAngle >= 360) {
-                    knifeAngle = 0;  // Keep the angle within 0-360 degrees
-                }
-            }
-
-            // Knife-brick collision
-            for (int i = 0; i < map.map.length; i++) {
-                for (int j = 0; j < map.map[0].length; j++) {
-                    if (map.map[i][j] > 0) {
-                        int brickX = j * map.bricksWidth + 80;
-                        int brickY = i * map.bricksHeight + 50;
-                        Rectangle brickRect = new Rectangle(brickX, brickY, map.bricksWidth, map.bricksHeight);
-
-                        if (new Rectangle(knifePosX, knifePosY, 80, 20).intersects(brickRect)) {
-                            map.setBricksValue(0, i, j);
-                            totalBricks--;
-                            score += 5;
-
-                            if (knifePosX + 39 <= brickRect.x || knifePosX + 1 >= brickRect.x + map.bricksWidth) {
-                                knifeXDir = -knifeXDir;
-                            } else {
-                                knifeYDir = -knifeYDir;
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // Knife movement
             knifePosX += knifeXDir;
             knifePosY += knifeYDir;
 
-            // Knife collision with walls
-            if (knifePosX < 0 || knifePosX > 670) {
-                knifeXDir = -knifeXDir;
-            }
-            if (knifePosY < 0) {
+            // Bounce off walls
+            if (knifePosX < 0 || knifePosX > 670) knifeXDir = -knifeXDir;
+            if (knifePosY < 0) knifeYDir = -knifeYDir;
+
+            // Paddle collision
+            if (new Rectangle(knifePosX, knifePosY, 80, 20).intersects(new Rectangle(playerX, 550, paddleWidth, 8))) {
                 knifeYDir = -knifeYDir;
+                score += (doublePointsActive ? 10 : 5); // Double points logic
+            }
+
+            // Ball missed
+            if (knifePosY > 570) {
+                lives--;
+                resetKnife();
+            }
+
+            // Brick collision
+            checkBrickCollision();
+
+            // Difficulty scaling
+            if (elapsedSeconds % 20 == 0 && elapsedSeconds > 0) {
+                knifeXDir *= 1.1;
+                knifeYDir *= 1.1;
             }
         }
         repaint();
     }
 
-    @Override
-    public void keyPressed(KeyEvent e) {
-        if (e.getKeyCode() == KeyEvent.VK_RIGHT) {
-            if (playerX >= 600) {
-                playerX = 600;
-            } else {
-                moveRight();
+    private void checkBrickCollision() {
+        for (int i = 0; i < map.map.length; i++) {
+            for (int j = 0; j < map.map[0].length; j++) {
+                if (map.map[i][j] > 0) {
+                    int brickX = j * map.bricksWidth + 80;
+                    int brickY = i * map.bricksHeight + 50;
+                    Rectangle brickRect = new Rectangle(brickX, brickY, map.bricksWidth, map.bricksHeight);
+
+                    if (new Rectangle(knifePosX, knifePosY, 80, 20).intersects(brickRect)) {
+                        map.setBricksValue(map.map[i][j] - 1, i, j);
+                        score += (doublePointsActive ? 20 : 10); // Double points logic
+                        totalBricks--;
+
+                        // Random power-up chance
+                        if (random.nextInt(10) == 0) spawnPowerUp(brickX, brickY);
+
+                        knifeYDir = -knifeYDir;
+                        break;
+                    }
+                }
             }
         }
-        if (e.getKeyCode() == KeyEvent.VK_LEFT) {
-            if (playerX < 10) {
-                playerX = 10;
-            } else {
-                moveLeft();
-            }
+    }
+
+    private void spawnPowerUp(int x, int y) {
+        int powerUpType = random.nextInt(3);
+        switch (powerUpType) {
+            case 0: // Extra Life
+                lives++;
+                break;
+            case 1: // Paddle Expansion
+                paddleWidth += 50;
+                break;
+            case 2: // Double Points
+                doublePointsActive = true;
+                Timer doublePointsTimer = new Timer(5000, e -> doublePointsActive = false); // 5 seconds
+                doublePointsTimer.setRepeats(false);
+                doublePointsTimer.start();
+                break;
         }
-
-        // Make sure the game resets when Enter is pressed and the game is over (play == false)
-        if (e.getKeyCode() == KeyEvent.VK_ENTER && !play) {
-            resetGame();
-        }
     }
 
-    @Override
-    public void keyReleased(KeyEvent e) {}
-
-    @Override
-    public void keyTyped(KeyEvent e) {}
-
-    private void moveRight() {
-        play = true;
-        playerX += 20;
-    }
-
-    private void moveLeft() {
-        play = true;
-        playerX -= 20;
-    }
-
-    private void resetGame() {
-        play = true;  // Start the game
-        elapsedSeconds = 0; // Reset elapsed time
-        startGameClock(); // Restart the game clock
-
-        // Reset positions, scores, and map
+    private void resetKnife() {
         knifePosX = 120;
         knifePosY = 350;
         knifeXDir = -1;
         knifeYDir = -2;
-        score = 0;
-        playerX = 310;
-        knifeAngle = 0; // Reset rotation
-        map = new MapGenerator(3, 7);
-        totalBricks = 21;
+    }
 
+    @Override
+    public void keyPressed(KeyEvent e) {
+        if (e.getKeyCode() == KeyEvent.VK_RIGHT && playerX < 600) moveRight();
+        if (e.getKeyCode() == KeyEvent.VK_LEFT && playerX > 10) moveLeft();
+        if (e.getKeyCode() == KeyEvent.VK_ENTER) {
+            if (gameState == GameState.WELCOME) {
+                gameState = GameState.PLAYING;
+                resetGame();
+            } else if (gameState == GameState.GAME_OVER) {
+                gameState = GameState.PLAYING;
+                resetGame();
+            }
+        }
+    }
+
+    private void resetGame() {
+        totalBricks = 21;
+        score = 0;
+        lives = 3;
+        elapsedSeconds = 0;
+        map = new MapGenerator(3, 7);
+        resetKnife();
+        play = true;
         repaint();
     }
 
-    private void startGameClock() {
-        gameClock.start();
+    private void moveRight() {
+        if (playerX >= 600) return;
+        playerX += 20;
     }
 
-    private void stopGameClock() {
-        gameClock.stop();
+    private void moveLeft() {
+        if (playerX <= 10) return;
+        playerX -= 20;
     }
+
+    @Override
+    public void keyReleased(KeyEvent e) {}
+    @Override
+    public void keyTyped(KeyEvent e) {}
 
     private String formatTime(int seconds) {
-        int mins = seconds / 60;
-        int secs = seconds % 60;
-        return String.format("%02d:%02d", mins, secs);
+        int minutes = seconds / 60;
+        seconds %= 60;
+        return String.format("%02d:%02d", minutes, seconds);
     }
 }
